@@ -1,0 +1,13 @@
+# IDE and OS files
+.idea/
+.vscode/
+*.suo
+*.user
+Thumbs.db
+Desktop.ini
+
+# Build artifacts
+*.obj
+*.o
+*.test
+*.out
