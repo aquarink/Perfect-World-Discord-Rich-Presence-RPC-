@@ -38,6 +38,34 @@ func findExecutable(configuredPath string, defaults []string) (string, error) {
 	return "", fmt.Errorf("file executable tidak ditemukan")
 }
 
+func findConfigFile() string {
+	candidates := []string{
+		"config/config.json",
+		"config/discord.json",
+		"launcher/config.json",
+		"config.json",
+	}
+
+	var fullCandidates []string
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		for _, c := range candidates {
+			fullCandidates = append(fullCandidates, filepath.Join(exeDir, c))
+		}
+	}
+	fullCandidates = append(fullCandidates, candidates...)
+
+	for _, p := range fullCandidates {
+		absPath, err := filepath.Abs(p)
+		if err == nil {
+			if info, err := os.Stat(absPath); err == nil && !info.IsDir() {
+				return absPath
+			}
+		}
+	}
+	return ""
+}
+
 func main() {
 	// 1. Single Instance Protection (prevents duplicate launchers / double clients)
 	mutexHandle, isFirst := acquireSingleInstanceMutex("RealmOfChaos_Launcher_Mutex")
@@ -47,14 +75,8 @@ func main() {
 	}
 	defer releaseSingleInstanceMutex(mutexHandle)
 
-	// 2. Load Configuration
-	cfgPath := "config.json"
-	if exePath, err := os.Executable(); err == nil {
-		localCfg := filepath.Join(filepath.Dir(exePath), "config.json")
-		if _, err := os.Stat(localCfg); err == nil {
-			cfgPath = localCfg
-		}
-	}
+	// 2. Load Configuration (checks config/config.json, config/discord.json, launcher/, or root, or embedded)
+	cfgPath := findConfigFile()
 	cfg := LoadConfig(cfgPath)
 
 	// 3. Locate Executables (Patcher & Game Client)

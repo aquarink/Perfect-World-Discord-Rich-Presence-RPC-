@@ -12,4 +12,5 @@ Desktop.ini
 *.test
 *.out
 /Perfect-World-Discord-Rich-Presence-RPC*
-
+prod.env
+*.env

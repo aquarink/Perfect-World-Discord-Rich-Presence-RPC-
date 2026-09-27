@@ -5,6 +5,18 @@ import (
 	"os"
 )
 
+var (
+	BuildClientID   = ""
+	BuildDetails    = ""
+	BuildState      = ""
+	BuildLargeImage = ""
+	BuildLargeText  = ""
+	BuildSmallImage = ""
+	BuildSmallText  = ""
+	BuildWebUrl     = ""
+	BuildDiscordUrl = ""
+)
+
 type ButtonConfig struct {
 	Label string `json:"label"`
 	Url   string `json:"url"`
@@ -28,22 +40,67 @@ type Config struct {
 }
 
 func DefaultConfig() Config {
+	clientID := "YOUR_DISCORD_APPLICATION_ID"
+	if BuildClientID != "" {
+		clientID = BuildClientID
+	}
+
+	details := "Perfect World v1.4.6"
+	if BuildDetails != "" {
+		details = BuildDetails
+	}
+
+	state := "Playing on Realm of Chaos"
+	if BuildState != "" {
+		state = BuildState
+	}
+
+	largeImage := "logo_roc"
+	if BuildLargeImage != "" {
+		largeImage = BuildLargeImage
+	}
+
+	largeText := "Realm of Chaos - Sirens of War"
+	if BuildLargeText != "" {
+		largeText = BuildLargeText
+	}
+
+	smallImage := "pwi"
+	if BuildSmallImage != "" {
+		smallImage = BuildSmallImage
+	}
+
+	smallText := "v1.4.6 build 2305"
+	if BuildSmallText != "" {
+		smallText = BuildSmallText
+	}
+
+	webUrl := "https://your-server-website.com"
+	if BuildWebUrl != "" {
+		webUrl = BuildWebUrl
+	}
+
+	discordUrl := "https://discord.gg/your-discord"
+	if BuildDiscordUrl != "" {
+		discordUrl = BuildDiscordUrl
+	}
+
 	return Config{
-		ClientID:   "YOUR_DISCORD_APPLICATION_ID",
-		Details:    "Perfect World v1.4.6",
-		State:      "Playing on Realm of Chaos",
-		LargeImage: "logo_roc",
-		LargeText:  "Realm of Chaos - Sirens of War",
-		SmallImage: "pwi",
-		SmallText:  "v1.4.6 build 2305",
+		ClientID:   clientID,
+		Details:    details,
+		State:      state,
+		LargeImage: largeImage,
+		LargeText:  largeText,
+		SmallImage: smallImage,
+		SmallText:  smallText,
 		Buttons: []ButtonConfig{
 			{
 				Label: "🌐 Website",
-				Url:   "https://your-server-website.com",
+				Url:   webUrl,
 			},
 			{
 				Label: "💬 Discord Server",
-				Url:   "https://discord.gg/your-discord",
+				Url:   discordUrl,
 			},
 		},
 		GameExecutable:        "element/elementclient.exe",
@@ -57,9 +114,10 @@ func DefaultConfig() Config {
 
 func LoadConfig(filename string) Config {
 	cfg := DefaultConfig()
-	data, err := os.ReadFile(filename)
-	if err == nil {
-		_ = json.Unmarshal(data, &cfg)
+	if filename != "" {
+		if data, err := os.ReadFile(filename); err == nil {
+			_ = json.Unmarshal(data, &cfg)
+		}
 	}
 	return cfg
 }
