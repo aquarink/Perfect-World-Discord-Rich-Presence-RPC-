@@ -31,7 +31,16 @@ func findGameExecutable(configuredPath string) (string, error) {
 		configuredPath,
 		"element/elementclient.exe",
 		"elementclient.exe",
-		"../element/elementclient.exe",
+	}
+
+	// Also check relative to where the launcher executable is located
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "element", "elementclient.exe"),
+			filepath.Join(exeDir, "elementclient.exe"),
+			filepath.Join(exeDir, configuredPath),
+		)
 	}
 
 	for _, path := range candidates {
@@ -52,6 +61,12 @@ func findGameExecutable(configuredPath string) (string, error) {
 func main() {
 	// 1. Load Configuration
 	cfgPath := "config.json"
+	if exePath, err := os.Executable(); err == nil {
+		localCfg := filepath.Join(filepath.Dir(exePath), "config.json")
+		if _, err := os.Stat(localCfg); err == nil {
+			cfgPath = localCfg
+		}
+	}
 	cfg := LoadConfig(cfgPath)
 
 	// 2. Find Game Executable
@@ -65,17 +80,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 3. Launch Game Process
+	// 3. Launch Game Process with normal visible window
 	gameDir := filepath.Dir(gamePath)
 	cmd := exec.Command(gamePath, cfg.GameArguments...)
 	cmd.Dir = gameDir
 
-	// In Windows, detach or prevent console popup
-	if runtime.GOOS == "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			HideWindow: true,
-		}
-	}
+	// Note: DO NOT set HideWindow: true because elementclient.exe is a DirectX GUI game!
+	// Hiding window prevents the game window from rendering.
 
 	if err := cmd.Start(); err != nil {
 		showNativeAlert(
@@ -89,7 +100,6 @@ func main() {
 	discord := NewDiscordClient(cfg.ClientID)
 	startTime := time.Now().Unix()
 
-	// Convert config buttons to activity buttons
 	var buttons []ActivityButton
 	for _, b := range cfg.Buttons {
 		if b.Label != "" && b.Url != "" {
@@ -134,7 +144,6 @@ func main() {
 						_ = discord.SetActivity(activity)
 					}
 				} else {
-					// Periodic update
 					_ = discord.SetActivity(activity)
 				}
 
