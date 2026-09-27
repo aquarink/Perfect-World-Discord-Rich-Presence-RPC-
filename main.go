@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"time"
@@ -86,11 +85,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 4. Launch Target Process
-	cmd := exec.Command(targetLaunchPath, targetLaunchArgs...)
-	cmd.Dir = targetLaunchDir
-
-	if err := cmd.Start(); err != nil {
+	// 4. Launch Target Process (supports automatic UAC elevation)
+	if err := launchProcess(targetLaunchPath, targetLaunchDir, targetLaunchArgs); err != nil {
 		showAlert(
 			"Realm of Chaos - Error",
 			fmt.Sprintf("Gagal menjalankan %s:\n%v", filepath.Base(targetLaunchPath), err),
@@ -100,9 +96,8 @@ func main() {
 
 	launchTime := time.Now()
 
-	// On non-windows platforms, fallback to simple process waiting
+	// On non-windows platforms, exit early (stubs)
 	if runtime.GOOS != "windows" {
-		_ = cmd.Wait()
 		return
 	}
 
