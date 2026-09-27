@@ -1,0 +1,25 @@
+{
+  "client_id": "YOUR_DISCORD_APPLICATION_ID",
+  "details": "Perfect World v1.4.6",
+  "state": "Playing on Realm of Chaos",
+  "large_image": "logo_roc",
+  "large_text": "Realm of Chaos - Sirens of War",
+  "small_image": "pwi",
+  "small_text": "v1.4.6 build 2305",
+  "buttons": [
+    {
+      "label": "🌐 Website",
+      "url": "https://your-server-website.com"
+    },
+    {
+      "label": "💬 Discord Server",
+      "url": "https://discord.gg/your-discord"
+    }
+  ],
+  "game_executable": "element/elementclient.exe",
+  "game_arguments": [
+    "game:cpw",
+    "console:1"
+  ],
+  "update_interval_seconds": 15
+}
