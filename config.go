@@ -21,6 +21,9 @@ type Config struct {
 	Buttons               []ButtonConfig `json:"buttons"`
 	GameExecutable        string         `json:"game_executable"`
 	GameArguments         []string       `json:"game_arguments"`
+	PatcherExecutable     string         `json:"patcher_executable"`
+	PatcherArguments      []string       `json:"patcher_arguments"`
+	LaunchPatcherFirst    bool           `json:"launch_patcher_first"`
 	UpdateIntervalSeconds int            `json:"update_interval_seconds"`
 }
 
@@ -45,6 +48,9 @@ func DefaultConfig() Config {
 		},
 		GameExecutable:        "element/elementclient.exe",
 		GameArguments:         []string{"game:cpw", "console:1"},
+		PatcherExecutable:     "patcher/patcher.exe",
+		PatcherArguments:      []string{},
+		LaunchPatcherFirst:    true,
 		UpdateIntervalSeconds: 15,
 	}
 }

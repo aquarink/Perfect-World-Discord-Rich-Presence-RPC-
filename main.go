@@ -6,60 +6,49 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"syscall"
 	"time"
-	"unsafe"
 )
 
-func showNativeAlert(title, message string) {
-	if runtime.GOOS == "windows" {
-		user32 := syscall.NewLazyDLL("user32.dll")
-		messageBox := user32.NewProc("MessageBoxW")
-
-		titlePtr, _ := syscall.UTF16PtrFromString(title)
-		msgPtr, _ := syscall.UTF16PtrFromString(message)
-
-		// MB_OK | MB_ICONEXCLAMATION = 0x00000000 | 0x00000030 = 0x30
-		messageBox.Call(0, uintptr(unsafe.Pointer(msgPtr)), uintptr(unsafe.Pointer(titlePtr)), 0x30)
-	} else {
-		fmt.Printf("[%s] %s\n", title, message)
+func findExecutable(configuredPath string, defaults []string) (string, error) {
+	var candidates []string
+	if configuredPath != "" {
+		candidates = append(candidates, configuredPath)
 	}
-}
+	candidates = append(candidates, defaults...)
 
-func findGameExecutable(configuredPath string) (string, error) {
-	candidates := []string{
-		configuredPath,
-		"element/elementclient.exe",
-		"elementclient.exe",
-	}
-
-	// Also check relative to where the launcher executable is located
+	var fullCandidates []string
 	if exePath, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exePath)
-		candidates = append(candidates,
-			filepath.Join(exeDir, "element", "elementclient.exe"),
-			filepath.Join(exeDir, "elementclient.exe"),
-			filepath.Join(exeDir, configuredPath),
-		)
+		for _, c := range candidates {
+			fullCandidates = append(fullCandidates, filepath.Join(exeDir, c))
+		}
 	}
+	fullCandidates = append(fullCandidates, candidates...)
 
-	for _, path := range candidates {
-		if path == "" {
+	for _, p := range fullCandidates {
+		if p == "" {
 			continue
 		}
-		absPath, err := filepath.Abs(path)
+		absPath, err := filepath.Abs(p)
 		if err == nil {
 			if info, err := os.Stat(absPath); err == nil && !info.IsDir() {
 				return absPath, nil
 			}
 		}
 	}
-
-	return "", fmt.Errorf("file 'element/elementclient.exe' tidak ditemukan")
+	return "", fmt.Errorf("file executable tidak ditemukan")
 }
 
 func main() {
-	// 1. Load Configuration
+	// 1. Single Instance Protection (prevents duplicate launchers / double clients)
+	mutexHandle, isFirst := acquireSingleInstanceMutex("RealmOfChaos_Launcher_Mutex")
+	if !isFirst {
+		// Another instance is already active. Exit silently.
+		return
+	}
+	defer releaseSingleInstanceMutex(mutexHandle)
+
+	// 2. Load Configuration
 	cfgPath := "config.json"
 	if exePath, err := os.Executable(); err == nil {
 		localCfg := filepath.Join(filepath.Dir(exePath), "config.json")
@@ -69,37 +58,55 @@ func main() {
 	}
 	cfg := LoadConfig(cfgPath)
 
-	// 2. Find Game Executable
-	gamePath, err := findGameExecutable(cfg.GameExecutable)
-	if err != nil {
-		showNativeAlert(
+	// 3. Locate Executables (Patcher & Game Client)
+	patcherPath, patcherErr := findExecutable(cfg.PatcherExecutable, []string{"patcher/patcher.exe", "patcher.exe"})
+	gamePath, gameErr := findExecutable(cfg.GameExecutable, []string{"element/elementclient.exe", "elementclient.exe"})
+
+	var targetLaunchPath string
+	var targetLaunchDir string
+	var targetLaunchArgs []string
+	isLaunchingPatcher := false
+
+	if cfg.LaunchPatcherFirst && patcherErr == nil {
+		targetLaunchPath = patcherPath
+		targetLaunchDir = filepath.Dir(patcherPath)
+		targetLaunchArgs = cfg.PatcherArguments
+		isLaunchingPatcher = true
+	} else if gameErr == nil {
+		targetLaunchPath = gamePath
+		targetLaunchDir = filepath.Dir(gamePath)
+		targetLaunchArgs = cfg.GameArguments
+		isLaunchingPatcher = false
+	} else {
+		showAlert(
 			"Realm of Chaos - Error",
-			"Gagal memulai game!\n\nFile 'element/elementclient.exe' tidak ditemukan.\n"+
-				"Pastikan file launcher ini diletakkan di folder utama game Perfect World Anda (sejajar dengan folder 'element').",
+			"Gagal memulai game!\n\nFile patcher ('patcher/patcher.exe') atau game client ('element/elementclient.exe') tidak ditemukan.\n"+
+				"Pastikan file launcher ini diletakkan di folder utama game Perfect World Anda (sejajar dengan folder 'element' dan 'patcher').",
 		)
 		os.Exit(1)
 	}
 
-	// 3. Launch Game Process with normal visible window
-	gameDir := filepath.Dir(gamePath)
-	cmd := exec.Command(gamePath, cfg.GameArguments...)
-	cmd.Dir = gameDir
-
-	// Note: DO NOT set HideWindow: true because elementclient.exe is a DirectX GUI game!
-	// Hiding window prevents the game window from rendering.
+	// 4. Launch Target Process
+	cmd := exec.Command(targetLaunchPath, targetLaunchArgs...)
+	cmd.Dir = targetLaunchDir
 
 	if err := cmd.Start(); err != nil {
-		showNativeAlert(
+		showAlert(
 			"Realm of Chaos - Error",
-			fmt.Sprintf("Gagal menjalankan game client:\n%v", err),
+			fmt.Sprintf("Gagal menjalankan %s:\n%v", filepath.Base(targetLaunchPath), err),
 		)
 		os.Exit(1)
 	}
 
-	// 4. Initialize Discord RPC in background
-	discord := NewDiscordClient(cfg.ClientID)
-	startTime := time.Now().Unix()
+	launchTime := time.Now()
 
+	// On non-windows platforms, fallback to simple process waiting
+	if runtime.GOOS != "windows" {
+		_ = cmd.Wait()
+		return
+	}
+
+	// 5. Prepare Discord Activity Template
 	var buttons []ActivityButton
 	for _, b := range cfg.Buttons {
 		if b.Label != "" && b.Url != "" {
@@ -110,57 +117,100 @@ func main() {
 		}
 	}
 
-	activity := Activity{
-		Details: cfg.Details,
-		State:   cfg.State,
-		Timestamps: ActivityTimestamps{
-			Start: startTime,
-		},
-		Assets: ActivityAssets{
-			LargeImage: cfg.LargeImage,
-			LargeText:  cfg.LargeText,
-			SmallImage: cfg.SmallImage,
-			SmallText:  cfg.SmallText,
-		},
-		Buttons: buttons,
+	discord := NewDiscordClient(cfg.ClientID)
+	discordConnected := false
+	gameHasRun := false
+	patcherExitedTime := time.Time{}
+	lastRpcUpdate := time.Time{}
+
+	updateInterval := time.Duration(cfg.UpdateIntervalSeconds) * time.Second
+	if updateInterval < 5*time.Second {
+		updateInterval = 15 * time.Second
 	}
 
-	stopRPC := make(chan struct{})
+	var activity Activity
 
-	// Goroutine to maintain connection and keepalive
-	go func() {
-		connected := false
-		for {
-			select {
-			case <-stopRPC:
-				if connected {
-					discord.Close()
+	// 6. Process Monitoring Loop
+	// Discord Rich Presence ONLY activates when elementclient.exe is running!
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		gameCount := countRunningProcesses("elementclient.exe")
+
+		if gameCount > 0 {
+			// Elementclient is running
+			if !gameHasRun {
+				gameHasRun = true
+				startTime := time.Now().Unix()
+
+				activity = Activity{
+					Details: cfg.Details,
+					State:   cfg.State,
+					Timestamps: ActivityTimestamps{
+						Start: startTime,
+					},
+					Assets: ActivityAssets{
+						LargeImage: cfg.LargeImage,
+						LargeText:  cfg.LargeText,
+						SmallImage: cfg.SmallImage,
+						SmallText:  cfg.SmallText,
+					},
+					Buttons: buttons,
 				}
-				return
-			default:
-				if !connected {
-					if err := discord.Connect(); err == nil {
-						connected = true
-						_ = discord.SetActivity(activity)
-					}
-				} else {
+			}
+
+			if !discordConnected {
+				if err := discord.Connect(); err == nil {
+					discordConnected = true
 					_ = discord.SetActivity(activity)
+					lastRpcUpdate = time.Now()
 				}
+			} else {
+				if time.Since(lastRpcUpdate) >= updateInterval {
+					_ = discord.SetActivity(activity)
+					lastRpcUpdate = time.Now()
+				}
+			}
+		} else {
+			// gameCount == 0 (elementclient.exe is not currently running)
+			if gameHasRun {
+				// The game was running, but player has now exited all game clients!
+				if discordConnected {
+					discord.Close()
+					discordConnected = false
+				}
+				break
+			}
 
-				interval := cfg.UpdateIntervalSeconds
-				if interval < 5 {
-					interval = 15
+			// Game has not started yet
+			if isLaunchingPatcher {
+				patcherCount := countRunningProcesses(filepath.Base(patcherPath))
+				if patcherCount > 0 {
+					// Patcher is still active; continue waiting
+					patcherExitedTime = time.Time{}
+				} else {
+					// Patcher is closed
+					if patcherExitedTime.IsZero() {
+						patcherExitedTime = time.Now()
+					}
+					// Allow up to 25 seconds grace period for elementclient.exe to initialize after patcher closes
+					if time.Since(patcherExitedTime) > 25*time.Second {
+						// Patcher was closed without starting the game
+						break
+					}
 				}
-				time.Sleep(time.Duration(interval) * time.Second)
+			} else {
+				// Direct game launch mode: allow 15 seconds for process to register
+				if time.Since(launchTime) > 15*time.Second {
+					break
+				}
 			}
 		}
-	}()
+	}
 
-	// 5. Wait for the game to exit
-	_ = cmd.Wait()
-
-	// 6. Clean up
-	close(stopRPC)
-	discord.Close()
-	time.Sleep(500 * time.Millisecond)
+	if discordConnected {
+		discord.Close()
+	}
+	time.Sleep(300 * time.Millisecond)
 }

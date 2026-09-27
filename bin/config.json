@@ -16,6 +16,9 @@
       "url": "https://discord.gg/your-discord"
     }
   ],
+  "patcher_executable": "patcher/patcher.exe",
+  "patcher_arguments": [],
+  "launch_patcher_first": true,
   "game_executable": "element/elementclient.exe",
   "game_arguments": [
     "game:cpw",
